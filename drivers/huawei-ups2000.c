@@ -792,6 +792,11 @@ static struct {
 static bool first_startup = 1;
 
 
+/* don't spam the syslog */
+static time_t alarm_logged_since = 0;
+#define UPS2000_LOG_INTERVAL 600  /* 10 minutes */
+
+
 static int ups2000_update_alarm(void)
 {
 	uint16_t val[27];
@@ -803,7 +808,6 @@ static int ups2000_update_alarm(void)
 
 	int alarm_count = 0;
 	bool alarm_logged = 0;
-	static time_t alarm_logged_since = 0;
 	time_t now = time(NULL);
 
 	upsdebugx(2, "ups2000_update_alarm");
@@ -837,7 +841,8 @@ static int ups2000_update_alarm(void)
 			 * Log the warning only if it's a new alarm, or if a long time
 			 * has paseed since we first warned it.
 			 */
-			if (!ups2000_alarm[i].active || difftime(now, alarm_logged_since) >= 600) {
+			if (!ups2000_alarm[i].active ||
+			    difftime(now, alarm_logged_since) >= UPS2000_LOG_INTERVAL) {
 				upslogx(LOG_WARNING, "New alarm %02d, Cause %02d: %s!",
 						     ups2000_alarm[i].alarm_id,
 						     ups2000_alarm[i].alarm_cause_id,
