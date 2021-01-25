@@ -785,13 +785,6 @@ static struct {
 };
 
 
-/*
- * NUT writes log to stdout/stderr, not syslog during the first start.
- * All alarms occured after the first startup must be relogged.
- */
-static bool first_startup = 1;
-
-
 /* don't spam the syslog */
 static time_t alarm_logged_since = 0;
 #define UPS2000_LOG_INTERVAL 600  /* 10 minutes */
@@ -848,13 +841,7 @@ static int ups2000_update_alarm(void)
 						     ups2000_alarm[i].alarm_cause_id,
 						     ups2000_alarm[i].alarm_name);
 
-				/*
-				 * Every alarm in the first startup must be treated as "new",
-				 * so they can be written into syslog in the next run.
-				 */
-				if (!first_startup)
-					ups2000_alarm[i].active = 1;
-
+				ups2000_alarm[i].active = 1;
 				alarm_logged = 1;
 			}
 
@@ -902,8 +889,6 @@ static int ups2000_update_alarm(void)
 			alarm_logged_since = time(NULL);
 		}
 	}
-
-	first_startup = 0;
 	return 0;
 }
 
