@@ -750,38 +750,149 @@ static int ups2000_update_status(void)
  * (i.e. only after a change, avoid issuing the same warning
  * repeatedly).
  */
+#define ALARM_CLEAR_AUTO      1
+#define ALARM_CLEAR_MANUAL    2
+#define ALARM_CLEAR_DEPENDING 3
+
 static struct {
-	const uint16_t reg;
-	const int bit;
+	bool active;             /* runtime: is this alarm currently active? */
+	const uint16_t reg;      /* alarm register to check */
+	const int bit;           /* alarm bit to check */
+	const int alarm_clear;   /* auto or manual clear */
+	const int loglevel;      /* warning or error */
 	const int alarm_id, alarm_cause_id;
-	const char *alarm_name;
-	const char *status_name;
-	bool active;  /* runtime status: is it currently active? */
+	const char *status_name; /* corresponding NUT status word */
+	const char *alarm_name;  /* alarm string */
+	const char *alarm_desc;  /* brief explanation */
 } ups2000_alarm[] =
 {
-	{ 40156,  3, 30,  1, "UPS internal overtemperature",      NULL,    0 },
-	{ 40161,  1, 10,  1, "Abnormal bypass voltage",           NULL,    0 },
-	{ 40161,  2, 10,  2, "Abnormal bypass voltage",           NULL,    0 },
-	{ 40163,  3, 25,  1, "Battery overvoltage",               NULL,    0 },
-	{ 40164,  1, 29,  1, "Battery needs maintenance",         "RB",    0 },
-	{ 40164,  3, 26,  1, "Battery undervoltage",              NULL,    0 },
-	{ 40170,  4, 22,  1, "Battery disconnected",              NULL,    0 },
-	{ 40173,  5, 66,  1, "Output overload",                   "OVER",  0 },
-	{ 40173,  3, 66,  2, "Output overload",                   "OVER",  0 },
-	{ 40174,  0, 14,  1, "UPS startup timeout",               NULL,    0 },
-	{ 40179, 14, 42, 15, "Rectifier fault (internal fault)",  NULL,    0 },
-	{ 40179, 15, 42, 17, "Rectifier fault (internal fault)",  NULL,    0 },
-	{ 40180,  1, 42, 18, "Rectifier fault (internal fault)",  NULL,    0 },
-	{ 40180,  5, 42, 24, "Inverter fault (internal fault)",   NULL,    0 },
-	{ 40180,  6, 42, 27, "Inverter fault (internal fault)",   NULL,    0 },
-	{ 40180,  7, 42, 28, "Inverter fault (internal fault)",   NULL,    0 },
-	{ 40180, 10, 42, 31, "Inverter fault (internal fault)",   NULL,    0 },
-	{ 40180, 11, 42, 32, "Inverter fault (internal fault)",   NULL,    0 },
-	{ 40180, 13, 42, 36, "Charger alarm (internal fault)",    NULL,    0 },
-	{ 40182,  4, 42, 42, "Charger alarm (internal fault)",    NULL,    0 },
-	{ 40182, 13, 66,  3, "Output overload",                   "OVER",  0 },
-	{ 40182, 14, 66,  4, "Output overload",                   "OVER",  0 },
-	{ -1, -1, -1, -1, NULL, NULL, 0 }
+	{
+		false, 40156, 3, ALARM_CLEAR_AUTO, LOG_ALERT,
+		30, 1, NULL, "UPS internal overtemperature",
+		"The ambient temperature is over 50-degree C. "
+		"Startup from standby mode is prohibited.",
+	},
+	{
+		false, 40161, 1, ALARM_CLEAR_AUTO, LOG_WARNING,
+		10, 1, NULL, "Abnormal bypass voltage",
+		"Bypass input is unavailable or out-of-range. Wait for "
+		"bypass input to recover, or change acceptable bypass "
+		"range via front panel.",
+	},
+	{
+		false, 40161, 2, ALARM_CLEAR_AUTO, LOG_WARNING,
+		10, 2, NULL, "Abnormal bypass frequency",
+		"Bypass input is unavailable or out-of-range. Wait for "
+		"bypass input to recover, or change acceptable bypass "
+		"range via front panel.",
+	},
+	{
+		false, 40163, 3, ALARM_CLEAR_DEPENDING, LOG_WARNING,
+		25, 1, NULL, "Battery overvoltage",
+		"When the UPS is started, voltage of each battery exceeds 15 V. "
+		"Or: current battery voltage exceeds 14.7 V.",
+	},
+	{
+		false, 40164, 1, ALARM_CLEAR_AUTO, LOG_WARNING,
+		29, 1, "RB", "Battery needs maintenance",
+		"During the last battery self-check, the battery voltage "
+		"was lower than the replacement threshold (11 V).",
+	},
+	{
+		false, 40164, 3, ALARM_CLEAR_AUTO, LOG_WARNING,
+		26, 1, NULL, "Battery undervoltage",
+		NULL,
+	},
+	{
+		false, 40170, 4, ALARM_CLEAR_AUTO, LOG_ALERT,
+		22, 1, NULL, "Battery disconnected",
+		"Battery is not connected, has loose connection, or faulty.",
+	},
+	{
+		false, 40173, 5, ALARM_CLEAR_AUTO, LOG_ALERT,
+		66, 1, "OVER", "Output overload (105%-110%)",
+		"UPS will shut down or transfer to bypass mode in 5-10 minutes.",
+	},
+	{
+		false, 40173, 3, ALARM_CLEAR_AUTO, LOG_ALERT,
+		66, 2, "OVER", "Output overload (110%-130%)",
+		"UPS will shut down or transfer to bypass mode in 30-60 seconds.",
+	},
+	{
+		false, 40174, 0, ALARM_CLEAR_DEPENDING, LOG_ALERT,
+		14, 1, NULL, "UPS startup timeout",
+		"The inverter output voltage is not within +/- 2 V of the "
+		"rated output. Or: battery is overdischarged.",
+	},
+	{
+		false, 40179, 14, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		42, 15, NULL, "Rectifier fault (internal fault)",
+		"Bus voltage is lower than 320 V.",
+	},
+	{
+		false, 40179, 15, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		42, 17, NULL, "Rectifier fault (internal fault)",
+		"Bus voltage is higher than 450 V.",
+	},
+	{
+		false, 40180, 1, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		42, 18, NULL, "Rectifier fault (internal fault)",
+		"Bus voltage is lower than 260 V.",
+	},
+	{
+		false, 40180, 5, ALARM_CLEAR_AUTO, LOG_ALERT,
+		42, 24, NULL, "EEPROM fault (internal fault)",
+		"Faulty EEPROM. All settings are restored to "
+		"factory default and cannot be saved.",
+	},
+	{
+		false, 40180, 6, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		42, 27, NULL, "Inverter fault (internal fault)",
+		"Inverter output overvoltage, undervoltage or "
+		"undercurrent.",
+	},
+	{
+		false, 40180, 7, ALARM_CLEAR_DEPENDING, LOG_ALERT,
+		42, 28, NULL, "Inverter fault (internal fault)",
+		"The inverter output voltage is lower than 100 V.",
+	},
+	{
+		false, 40180, 10, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		42, 31, NULL, "Inverter fault (internal fault)",
+		"The difference between the absolute value of the positive bus "
+		"voltage and that of the negative bus voltage is 100 V.",
+	},
+	{
+		false, 40180, 11, ALARM_CLEAR_DEPENDING, LOG_ALERT,
+		42, 32, NULL, "UPS internal overtemperature",
+		"The ambient temperature is over 50 degree C, "
+		"switching to bypass mode.",
+
+	},
+	{
+		false, 40180, 13, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		42, 36, NULL, "Charger fault (internal fault)",
+		"The charger has no output. Faulty internal connections.",
+
+	},
+	{
+		false, 40182, 4, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		42, 42, NULL, "Charger fault (internal fault)",
+		"The charger has no output while the inverter is on, "
+		"battery undervoltage. Faulty switching transistor.",
+	},
+	{
+		false, 40182, 13, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		66, 3, "OVER", "Output overload shutdown",
+		"UPS has shutdown or transferred to bypass mode.",
+	},
+	{
+		false, 40182, 14, ALARM_CLEAR_MANUAL, LOG_ALERT,
+		66, 4, "OVER", "Bypass output overload shutdown",
+		"UPS has shutdown, bypass output was overload and exceeded "
+		"time limit.",
+	},
+	{ false, -1, -1, -1, -1, -1, -1, NULL, NULL, NULL }
 };
 
 
@@ -801,6 +912,7 @@ static int ups2000_update_alarm(void)
 
 	int alarm_count = 0;
 	bool alarm_logged = 0;
+	bool alarm_rtfm = 0;
 	time_t now = time(NULL);
 
 	upsdebugx(2, "ups2000_update_alarm");
@@ -821,7 +933,7 @@ static int ups2000_update_alarm(void)
 		if (CHECK_BIT(val[idx], ups2000_alarm[i].bit)) {
 			alarm_count++;
 
-			all_alarms_len += snprintf(alarm_buf, 128, "(%02d/%02d): %s!",
+			all_alarms_len += snprintf(alarm_buf, 128, "(ID %02d/%02d): %s!",
 						   ups2000_alarm[i].alarm_id,
 						   ups2000_alarm[i].alarm_cause_id,
 						   ups2000_alarm[i].alarm_name);
@@ -836,10 +948,47 @@ static int ups2000_update_alarm(void)
 			 */
 			if (!ups2000_alarm[i].active ||
 			    difftime(now, alarm_logged_since) >= UPS2000_LOG_INTERVAL) {
-				upslogx(LOG_WARNING, "New alarm %02d, Cause %02d: %s!",
-						     ups2000_alarm[i].alarm_id,
-						     ups2000_alarm[i].alarm_cause_id,
-						     ups2000_alarm[i].alarm_name);
+				int loglevel;
+				const char *alarm_word;
+
+				/*
+				 * Most text editors have syntax highlighting, adding an
+				 * alarm word makes the log more readable
+				 */
+				loglevel = ups2000_alarm[i].loglevel;
+				if (loglevel <= LOG_ERR) {
+					alarm_word = "ERROR";
+					/*
+					 * If at least one error is serious, suggest reading
+					 * manual.
+					 */
+					alarm_rtfm = 1;
+				}
+				else {
+					alarm_word = "WARNING";
+				}
+
+				upslogx(loglevel, "%s: alarm %02d, Cause %02d: %s!",
+						  alarm_word,
+						  ups2000_alarm[i].alarm_id,
+						  ups2000_alarm[i].alarm_cause_id,
+						  ups2000_alarm[i].alarm_name);
+
+				if (ups2000_alarm[i].alarm_desc)
+					upslogx(loglevel, "%s", ups2000_alarm[i].alarm_desc);
+
+				switch (ups2000_alarm[i].alarm_clear) {
+				case ALARM_CLEAR_AUTO:
+					upslogx(loglevel, "This alarm can be auto cleared.");
+					break;
+				case ALARM_CLEAR_MANUAL:
+					upslogx(loglevel, "This alarm can only be manual cleared "
+							  "via front panel.");
+					break;
+				case ALARM_CLEAR_DEPENDING:
+					upslogx(loglevel, "This alarm is auto or manual cleared "
+							  "depending on the specific problem.");
+				}
 
 				ups2000_alarm[i].active = 1;
 				alarm_logged = 1;
@@ -878,6 +1027,9 @@ static int ups2000_update_alarm(void)
 		 */
 		if (alarm_logged) {
 			upslogx(LOG_WARNING, "UPS has %d alarms in effect.", alarm_count);
+			if (alarm_rtfm)
+				upslogx(LOG_WARNING, "Read User Manual from Huawei for "
+						     "troubleshooting information.");
 			alarm_logged_since = time(NULL);
 		}
 	}
