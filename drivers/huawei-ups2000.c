@@ -140,6 +140,12 @@ static time_t shutdown_at = 0;
 static time_t reboot_at = 0;
 static time_t start_at = 0;
 
+/*
+ * Can we enter bypass mode? It's checked by ups2000_update_alarm()
+ * and used by ups2000_instcmd_bypass_start().
+ */
+static bool bypass_available = 0;
+
 /* function prototypes */
 static int ups2000_update_info(void);
 static int ups2000_update_status(void);
@@ -164,6 +170,8 @@ static int ups2000_delay_set(const char *var, const char *string);
 /* instant command function prototypes */
 static void ups2000_init_instcmd(void);
 static int instcmd(const char *cmd, const char *extra);
+static int ups2000_instcmd_load_on(const uint16_t reg);
+static int ups2000_instcmd_bypass_start(const uint16_t reg);
 static int ups2000_instcmd_beeper_toggle(const uint16_t reg);
 static int ups2000_instcmd_shutdown_stayoff(const uint16_t reg);
 static int ups2000_instcmd_shutdown_return(const uint16_t reg);
@@ -925,12 +933,23 @@ static int ups2000_update_alarm(void)
 	if (r != 27)
 		return 1;
 
+	bypass_available = 1;  /* register 40161 hack, see comments below */
+
 	for (i = 0; ups2000_alarm[i].alarm_id != -1; i++) {
 		int idx = ups2000_alarm[i].reg - ups2000_alarm[0].reg;
 		if (idx > 26 || idx < 0)
 			fatalx(EXIT_FAILURE, "register calculation overflow!\n");
 
 		if (CHECK_BIT(val[idx], ups2000_alarm[i].bit)) {
+			if (ups2000_alarm[i].reg == 40161)
+				/*
+				 * HACK: special treatment for register 40161. If this
+				 * register indicates an alarm, we need to lock the
+				 * "bypass.on" command. It's written to the global
+				 * "bypass_available" flag.
+				 */
+				bypass_available = 0;
+
 			alarm_count++;
 
 			all_alarms_len += snprintf(alarm_buf, 128, "(ID %02d/%02d): %s!",
@@ -1360,34 +1379,43 @@ static int ups2000_delay_set(const char *var, const char *string)
 
 
 /*
- * A lookup table of all instant commands "cmd" and their corresponding
- * registers "reg".
+ * A lookup table of all instant commands "cmd" and their
+ * corresponding registers "reg". For each instant command,
+ * it's handled by...
  *
- * For each instant command, it's either handled by writing "val" to "reg",
- * alternatively, by calling its handler "*handler_func".
+ * 1. One register write, by writing "val1" to "reg1", the
+ * simplest case.
+ *
+ * 2. Two register writes, by writing "val1" to "reg1", and
+ * writing "val2" to "reg2". One after another.
+ *
+ * 3. Calling "*handler_func" and passing "reg1". This is
+ * used to handle commands that needs additional processing.
+ * If "reg1" is not necessary or unsuitable, "-1" is used.
  */
-static struct {
+#define REG_NONE -1, -1
+
+static struct ups2000_cmd_t {
 	const char *cmd;
-	const uint16_t reg;
-	const int16_t val;
+	const int16_t reg1, val1, reg2, val2;
 	int (*const handler_func)(const uint16_t);
 } ups2000_cmd[] =
 {
-	{ "test.battery.start.quick", 2028,  1, NULL },
-	{ "test.battery.start.deep",  2021,  1, NULL },
-	{ "test.battery.stop",        2023,  1, NULL },
-	{ "beeper.enable",            1046,  0, NULL },
-	{ "beeper.disable",           1046,  1, NULL },
-	{ "bypass.start",             1045,  1, NULL },
-	{ "bypass.stop",              1045,  0, NULL },
-	{ "load.on",                  1029,  1, NULL },
-	{ "load.off",                 1030,  1, NULL },
-	{ "beeper.toggle",            1046, -1, ups2000_instcmd_beeper_toggle            },
-	{ "shutdown.stayoff",         1049, -1, ups2000_instcmd_shutdown_stayoff         },
-	{ "shutdown.return",            -1, -1, ups2000_instcmd_shutdown_return          },
-	{ "shutdown.reboot",            -1, -1, ups2000_instcmd_shutdown_reboot          },
-	{ "shutdown.reboot.graceful",   -1, -1, ups2000_instcmd_shutdown_reboot_graceful },
-	{ NULL, 0, 0, NULL },
+	{ "test.battery.start.quick", 2028,  1, REG_NONE, NULL },
+	{ "test.battery.start.deep",  2021,  1, REG_NONE, NULL },
+	{ "test.battery.stop",        2023,  1, REG_NONE, NULL },
+	{ "beeper.enable",            1046,  0, REG_NONE, NULL },
+	{ "beeper.disable",           1046,  1, REG_NONE, NULL },
+	{ "load.off",                 1045,  0, 1030, 1,  NULL },
+	{ "bypass.stop",              1029,  1, 1045, 0,  NULL },
+	{ "load.on",                  1029, -1, REG_NONE, ups2000_instcmd_load_on                  },
+	{ "bypass.start",             REG_NONE, REG_NONE, ups2000_instcmd_bypass_start             },
+	{ "beeper.toggle",            1046, -1, REG_NONE, ups2000_instcmd_beeper_toggle            },
+	{ "shutdown.stayoff",         1049, -1, REG_NONE, ups2000_instcmd_shutdown_stayoff         },
+	{ "shutdown.return",          REG_NONE, REG_NONE, ups2000_instcmd_shutdown_return          },
+	{ "shutdown.reboot",          REG_NONE, REG_NONE, ups2000_instcmd_shutdown_reboot          },
+	{ "shutdown.reboot.graceful", REG_NONE, REG_NONE, ups2000_instcmd_shutdown_reboot_graceful },
+	{ NULL, -1, -1, -1, -1, NULL },
 };
 
 
@@ -1405,33 +1433,125 @@ static int instcmd(const char *cmd, const char *extra)
 {
 	int i;
 	int status;
+	struct ups2000_cmd_t *cmd_action = NULL;
 
 	for (i = 0; ups2000_cmd[i].cmd != NULL; i++) {
 		if (!strcasecmp(cmd, ups2000_cmd[i].cmd)) {
-			if (ups2000_cmd[i].handler_func) {
-				/* handled by a function */
-				status = ups2000_cmd[i].handler_func(ups2000_cmd[i].reg);
-			}
-			else {
-				/* handled by a register write */
-				int r = modbus_write_register(modbus_ctx,
-							      10000 + ups2000_cmd[i].reg,
-							      ups2000_cmd[i].val);
-				if (r != 1)
-					status = STAT_INSTCMD_FAILED;
-				else
-					status = STAT_INSTCMD_HANDLED;
-			}
-
-			if (status == STAT_INSTCMD_FAILED)
-				upslogx(LOG_ERR, "instcmd: command [%s] failed", cmd);
-			else if (status == STAT_INSTCMD_HANDLED)
-				upslogx(LOG_INFO, "instcmd: command [%s] handled", cmd);
-			return status;
+			cmd_action = &ups2000_cmd[i];
 		}
 	}
-	upslogx(LOG_WARNING, "instcmd: command [%s] unknown", cmd);
-	return STAT_INSTCMD_UNKNOWN;
+
+	if (!cmd_action) {
+		upslogx(LOG_WARNING, "instcmd: command [%s] unknown", cmd);
+		return STAT_INSTCMD_UNKNOWN;
+	}
+
+	if (cmd_action->handler_func) {
+		/* handled by a function */
+		status = cmd_action->handler_func(cmd_action->reg1);
+	}
+	else if (cmd_action->reg1 != -1 && cmd_action->val1 != -1) {
+		/* handled by a register write */
+		int r = modbus_write_register(modbus_ctx,
+					      10000 + cmd_action->reg1,
+					      cmd_action->val1);
+		if (r == 1)
+			status = STAT_INSTCMD_HANDLED;
+		else
+			status = STAT_INSTCMD_FAILED;
+
+		/*
+		 * if the previous write succeeds and there is an additional
+		 * register to write.
+		 */
+		if (r == 1 && cmd_action->reg2 != -1 && cmd_action->val2 != -1) {
+			r = modbus_write_register(modbus_ctx,
+						  10000 + cmd_action->reg2,
+						  cmd_action->val2);
+			if (r == 1)
+				status = STAT_INSTCMD_HANDLED;
+			else
+				status = STAT_INSTCMD_FAILED;
+		}
+	}
+	else {
+		fatalx(EXIT_FAILURE, "invalid ups2000_cmd table!");
+	}
+
+	if (status == STAT_INSTCMD_FAILED)
+		upslogx(LOG_ERR, "instcmd: command [%s] failed", cmd);
+	else if (status == STAT_INSTCMD_HANDLED)
+		upslogx(LOG_INFO, "instcmd: command [%s] handled", cmd);
+	return status;
+}
+
+
+static int ups2000_instcmd_load_on(const uint16_t reg)
+{
+	int r;
+	const char *status;
+
+	/* force refresh UPS status */
+	status_init();
+	r = ups2000_update_status();
+	if (r != 0) {
+		dstate_datastale();
+		return STAT_INSTCMD_FAILED;
+	}
+	status_commit();
+
+	/* is it off? */
+	status = dstate_getinfo("ups.status");
+	if (!strstr(status, "OFF")) {
+		/*
+		 * You cannot turn it on if it's not off. It's probably in
+		 * bypass mode. If so, use "bypass.stop".
+		 */
+		if (strstr(status, "BYPASS"))
+			upslogx(LOG_ERR, "load.on failed: UPS is already on and in bypass mode. "
+				"To enter normal mode, use bypass.off");
+		else
+			upslogx(LOG_ERR, "load.on failed: reason unknown.");
+
+		return STAT_INSTCMD_FAILED;
+	}
+
+	r = modbus_write_register(modbus_ctx, 10000 + reg, 1);
+	if (r != 1)
+		return STAT_INSTCMD_FAILED;
+	return STAT_INSTCMD_HANDLED;
+}
+
+
+static int ups2000_instcmd_bypass_start(const uint16_t reg)
+{
+	int r;
+	NUT_UNUSED_VARIABLE(reg);
+
+	/* force update alarms */
+	alarm_init();
+	r = ups2000_update_alarm();
+	if (r != 0)
+		return STAT_INSTCMD_FAILED;
+	alarm_commit();
+
+	/* bypass input has a power failure, refuse to bypass */
+	if (!bypass_available) {
+		upslogx(LOG_ERR, "bypass input is abnormal, refuse to enter bypass mode.");
+		return STAT_INSTCMD_FAILED;
+	}
+
+	/* enable "bypass on shutdown" */
+	r = modbus_write_register(modbus_ctx, 10000 + 1045, 1);
+	if (r != 1)
+		return STAT_INSTCMD_FAILED;
+
+	/* shutdown */
+	r = modbus_write_register(modbus_ctx, 10000 + 1030, 1);
+	if (r != 1)
+		return STAT_INSTCMD_FAILED;
+
+	return STAT_INSTCMD_HANDLED;
 }
 
 
