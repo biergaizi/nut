@@ -1108,8 +1108,8 @@ static struct {
 	int (*const setter)(const uint16_t, const char *);
 } ups2000_rw_var[] =
 {
-	{ "ups.start.auto",     1044, ups2000_autostart_get,      ups2000_autostart_set      },
-	{ "ups.beeper.status",  1046, ups2000_beeper_get,         ups2000_beeper_set         },
+	{ "ups.start.auto",     1044, ups2000_autostart_get, ups2000_autostart_set },
+	{ "ups.beeper.status",  1046, ups2000_beeper_get,    ups2000_beeper_set    },
 	{ NULL, 0, NULL, NULL },
 };
 
