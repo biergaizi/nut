@@ -129,7 +129,14 @@ Toggle the UPS beeper.
 *bypass.start*::
 
 Put the UPS in bypass mode. Use with caution. It exposes your equipment
-to unregulated power and provides no protection from power failures.
+to unregulated line power and provides no protection from power failures.
+Also, the bypass input goes out of specification, the UPS will shutdown.
+As a warning, the UPS beeps once every 10 seconds.
+
+NOTE: If the bypass input is currently abnormal due to a power failure,
+this command is aborted and an error is logged. However, it's possible
+for a power failure to occur just after our check. Thus, again, use with
+caution.
 
 *bypass.stop*::
 
