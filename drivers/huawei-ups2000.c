@@ -1788,18 +1788,17 @@ void upsdrv_cleanup(void)
  */
 static time_t time_seek(time_t t, int seconds)
 {
-	struct tm *time_tm;
+	struct tm time_tm;
 	time_t time_output;
 
 	if (!t)
 		fatalx(EXIT_FAILURE, "time_seek() failed!");
 
-	time_tm = gmtime(&t);
-	if (!time_tm)
+	if (!gmtime_r(&t, &time_tm))
 		fatalx(EXIT_FAILURE, "time_seek() failed!");
 
-	time_tm->tm_sec += seconds;
-	time_output = mktime(time_tm);
+	time_tm.tm_sec += seconds;
+	time_output = mktime(&time_tm);
 
 	if (time_output == (time_t) -1)
 		fatalx(EXIT_FAILURE, "time_seek() failed!");
