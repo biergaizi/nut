@@ -166,7 +166,8 @@ Enable or disable the UPS beeper, *disabled* or *enabled*.
 
 NOTE: The beeper can only be disabled completely, it cannot be
 temporally muted until the next alarm, but the option *muted* is
-also accepted for convince and treated as an alias for *disabled*.
+also accepted for convenience, *muted* is treated as an alias of
+*disabled*.
 
 **ups.delay.shutdown**::
 Seconds to wait after shutdown with delay command. It's the runtime
