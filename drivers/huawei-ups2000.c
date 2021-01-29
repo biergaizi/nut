@@ -154,6 +154,8 @@ static int ups2000_update_timers(void);
 static void ups2000_device_identification(void);
 static int ups2000_read_serial(uint8_t *buf, size_t buf_len);
 static int ups2000_read_registers(modbus_t *ctx, int addr, int nb, uint16_t *dest);
+static int ups2000_write_register(modbus_t *ctx, int addr, uint16_t val);
+static int ups2000_write_registers(modbus_t *ctx, int addr, int nb, uint16_t *src);
 static uint16_t crc16(uint8_t *buffer, uint16_t buffer_length);
 static time_t time_seek(time_t t, int seconds);
 
@@ -1226,7 +1228,7 @@ static int ups2000_autostart_set(const uint16_t reg, const char *string)
 	else
 		return STAT_SET_INVALID;
 
-	r = modbus_write_register(modbus_ctx, reg + 10000, val);
+	r = ups2000_write_register(modbus_ctx, reg + 10000, val);
 	if (r != 1)
 		return STAT_SET_FAILED;
 
@@ -1282,7 +1284,7 @@ static int ups2000_beeper_set(const uint16_t reg, const char *string)
 	else
 		return STAT_SET_INVALID;
 
-	r = modbus_write_register(modbus_ctx, reg + 10000, val);
+	r = ups2000_write_register(modbus_ctx, reg + 10000, val);
 	if (r != 1)
 		return STAT_SET_FAILED;
 
@@ -1452,9 +1454,9 @@ static int instcmd(const char *cmd, const char *extra)
 	}
 	else if (cmd_action->reg1 != -1 && cmd_action->val1 != -1) {
 		/* handled by a register write */
-		int r = modbus_write_register(modbus_ctx,
-					      10000 + cmd_action->reg1,
-					      cmd_action->val1);
+		int r = ups2000_write_register(modbus_ctx,
+					       10000 + cmd_action->reg1,
+					       cmd_action->val1);
 		if (r == 1)
 			status = STAT_INSTCMD_HANDLED;
 		else
@@ -1465,9 +1467,9 @@ static int instcmd(const char *cmd, const char *extra)
 		 * register to write.
 		 */
 		if (r == 1 && cmd_action->reg2 != -1 && cmd_action->val2 != -1) {
-			r = modbus_write_register(modbus_ctx,
-						  10000 + cmd_action->reg2,
-						  cmd_action->val2);
+			r = ups2000_write_register(modbus_ctx,
+						   10000 + cmd_action->reg2,
+						   cmd_action->val2);
 			if (r == 1)
 				status = STAT_INSTCMD_HANDLED;
 			else
@@ -1516,7 +1518,7 @@ static int ups2000_instcmd_load_on(const uint16_t reg)
 		return STAT_INSTCMD_FAILED;
 	}
 
-	r = modbus_write_register(modbus_ctx, 10000 + reg, 1);
+	r = ups2000_write_register(modbus_ctx, 10000 + reg, 1);
 	if (r != 1)
 		return STAT_INSTCMD_FAILED;
 	return STAT_INSTCMD_HANDLED;
@@ -1542,12 +1544,12 @@ static int ups2000_instcmd_bypass_start(const uint16_t reg)
 	}
 
 	/* enable "bypass on shutdown" */
-	r = modbus_write_register(modbus_ctx, 10000 + 1045, 1);
+	r = ups2000_write_register(modbus_ctx, 10000 + 1045, 1);
 	if (r != 1)
 		return STAT_INSTCMD_FAILED;
 
 	/* shutdown */
-	r = modbus_write_register(modbus_ctx, 10000 + 1030, 1);
+	r = ups2000_write_register(modbus_ctx, 10000 + 1030, 1);
 	if (r != 1)
 		return STAT_INSTCMD_FAILED;
 
@@ -1595,7 +1597,7 @@ static int ups2000_instcmd_shutdown_stayoff(const uint16_t reg)
 	val = ups2000_offdelay * 10;  /* scaling factor */
 	val /= 60;                    /* convert to minutes */
 
-	r = modbus_write_register(modbus_ctx, 10000 + reg, val);
+	r = ups2000_write_register(modbus_ctx, 10000 + reg, val);
 	if (r != 1)
 		return STAT_INSTCMD_FAILED;
 
@@ -1626,7 +1628,7 @@ static int ups2000_shutdown_guaranteed_return(uint16_t offdelay, uint16_t ondela
 	val[0] = (offdelay * 10) / 60;
 	val[1] = ondelay / 60;
 
-	r = modbus_write_registers(modbus_ctx, 1047 + 10000, 2, val);
+	r = ups2000_write_registers(modbus_ctx, 1047 + 10000, 2, val);
 	if (r != 2)
 		return STAT_INSTCMD_FAILED;
 
@@ -1910,6 +1912,43 @@ static int ups2000_read_registers(modbus_t *ctx, int addr, int nb, uint16_t *des
 	upslogx(LOG_WARNING, "Register %04d has a fatal read failure.", addr);
 	retry_status = RETRY_DISABLE_TEMPORARY;
 	return r;
+}
+
+
+static int ups2000_write_registers(modbus_t *ctx, int addr, int nb, uint16_t *src)
+{
+	int i;
+	int r;
+
+	if (addr < 10000)
+		upslogx(LOG_ERR, "Invalid register write from %04d detected. "
+				 "Please file a bug report!", addr);
+
+	for (i = 0; i < 3; i++) {
+		r = ups2000_write_registers(ctx, addr, nb, src);
+
+		/* generic retry for modbus write failures. */
+		if (retry_status == RETRY_ENABLE && r != nb) {
+			upslogx(LOG_WARNING, "Register %04d has a write failure. Retrying...", addr);
+			sleep(1);
+			continue;
+		}
+		else if (r == nb)
+			retry_status = RETRY_ENABLE;
+
+		return r;
+	}
+
+	/* Give up */
+	upslogx(LOG_WARNING, "Register %04d has a fatal write failure.", addr);
+	retry_status = RETRY_DISABLE_TEMPORARY;
+	return r;
+}
+
+
+static int ups2000_write_register(modbus_t *ctx, int addr, uint16_t val)
+{
+	return ups2000_write_registers(ctx, addr, 1, &val);
 }
 
 
