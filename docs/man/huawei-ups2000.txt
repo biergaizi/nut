@@ -4,7 +4,8 @@ HUAWEI_UPS2000(8)
 NAME
 ----
 
-huawei-ups2000 - Driver for Huawei UPS2000/UPS2000A (1kVA-3kVA) UPS.
+huawei-ups2000 - Driver for Huawei UPS2000/UPS2000A (1kVA-3kVA) UPS
+with serial Modbus connection.
 
 SYNOPSIS
 --------
@@ -20,10 +21,10 @@ linkman:nutupsdrv[8].
 SUPPORTED HARDWARE
 ------------------
 
-This driver support Huawei UPS2000 and UPS2000A series of online (double
+This driver supports Huawei UPS2000 and UPS2000A series of online (double
 conversion) UPS, only the basic 1kVA-3kVA model is supported, higher power
-models are not tested. Only RS-232 is supported, USB and RS-485 are not
-supported and their cables should be unplugged.
+models were not tested. Only RS-232 Modbus connection is supported, but
+USB and RS-485 are not supported and their cables should be unplugged.
 
 huawei-ups2000 uses the libmodbus project, for Modbus implementation.
 
@@ -33,25 +34,25 @@ CABLING
 The UPS has a USB port, a RS-232 port, and an optional RMS-MODBUS01B RS-485
 Modbus adapter. Only the RS-232 port is supported, USB or RS-485 cannot be
 used - their cables should be unplugged. You must connect the UPS2000 via
-RS-232, either to a built-in serial port on your computer, or to use an
+RS-232, either to a built-in serial port on your computer, or by using an
 USB-to-RS-232 converter. If you plan to use an USB-to-RS-232 converter,
 make sure it's supported by your operating system.
-
-EXTRA ARGUMENTS
----------------
-
-This driver doesn't support any optional settings.
 
 INSTALLATION
 ------------
 
 This driver is not built by default.  You can build it by installing libmodbus
-and running `configure --with-modbus=yes`.
+(with development packages) and running `configure --with-modbus=yes`.
 
 You also need to give proper permissions on the local serial device file to
-allow the NUT user to access it. For example, a USB-to-serial converter could
-be identified as /dev/ttyACM0 or /dev/ttyUSB0 on Linux, /dev/ttyU0 on FreeBSD
-(note the capital "U"). A built-in serial port could be identified as /dev/ttyS0.
+allow the NUT driver run-time user to access it (R/W). This may need additional
+setup for start-up scripting, udev or upower rules, to apply the rights on every
+boot -- especially if your device nodes are tracked by a virtual filesystem.
+
+For example, a USB-to-serial converter could be identified as `/dev/ttyACM0`
+or `/dev/ttyUSB0` on Linux, or `/dev/ttyU0` on FreeBSD (note the capital "U").
+A built-in serial port could be identified as `/dev/ttyS0` on Linux or one of
+`/dev/cua*` names on FreeBSD.
 
 EXTRA ARGUMENTS
 ---------------
@@ -211,8 +212,8 @@ Serial port becomes unresponsive
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Some malformed commands are known to lock up the serial port. Upon receiving
-it, UPS2000 stops all serial communications. The result is a completely
-unresponsive UPS, regardless of what you do - Restarting NUT, rebooting the
+them, UPS2000 stops all serial communications. The result is a completely
+unresponsive UPS, regardless of what you do - restarting NUT, rebooting the
 computer - cannot restore connectivity, as if someone has unplugged the RS-232
 cable. To recover: Simply power cycle the UPS via the front panel (check the
 user manual of your UPS for front panel usage). Switch the UPS off, wait a
@@ -220,9 +221,9 @@ few second to allow UPS to shut down, and switch the UPS on again.
 
 That being said, locking up the serial port is unlikely to happen, care has
 been taken while writing the current driver and we are not aware of any lockup
-problems. However, the possibility of an unknown problem cannot be ruled out.
-If you have discovered a reproducible serial port lockup bug, make sure to
-file a bug report.
+problems. However, the possibility of an unknown problem such as flaky cabling
+or EMI noise cannot be ruled out. If you have discovered a reproducible serial
+port lockup bug, make sure to file a bug report.
 
 USB is unsupported
 ~~~~~~~~~~~~~~~~~~~
