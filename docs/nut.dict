@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2537 utf-8
+personal_ws-1.1 en 2547 utf-8
 AAS
 ACFAIL
 ACFREQ
@@ -401,6 +401,7 @@ Hlavinka
 Holger
 Hoogervorst
 Hough
+Hunnox
 Hurd
 Håvard
 IANA
@@ -460,6 +461,7 @@ KRT
 Kain
 Kaminski
 Kanji
+Kazancev
 Kazutoshi
 Kebo
 Keor
@@ -803,6 +805,7 @@ PowerVault
 PowerWalker
 PowerWare
 Powerchute
+Powercool
 Powervar
 Powerwell
 Prachi
@@ -876,6 +879,7 @@ RealSmart
 RedHat
 Redhat
 RefNom
+Regados
 Reinholdtsen
 Remi
 Rene
@@ -892,6 +896,7 @@ Rodríguez
 Rucelf
 RxD
 RxHs
+Ryabov
 SAI
 SCM
 SCO
@@ -933,6 +938,7 @@ SMT
 SMTP
 SMX
 SNMPv
+SNR
 SOCKADDR
 SOCKLEN
 SOFF
@@ -1127,6 +1133,7 @@ VVV
 Vaclav
 Valderen
 Vdc
+Velloso
 VendorID
 Viewpower
 Viewsonic
@@ -1177,6 +1184,7 @@ YY
 YYYYMMDD
 YZ
 Yifeng
+Ygor
 Yukai
 Yunto
 ZZZZZZZZ
@@ -1271,6 +1279,7 @@ automessage
 autoreconf
 autorestart
 autosaving
+autoscan
 autostart
 autowidth
 auxdata
@@ -1663,6 +1672,7 @@ http
 httpd
 https
 huawei
+hunnox
 iBox
 iDowell
 iManufacturer
@@ -1861,6 +1871,7 @@ mibs
 microcontroller
 microdowell
 microlink
+microsol
 middleware
 minacvi
 minacvo
@@ -1950,6 +1961,7 @@ nomdcvolts
 nomfrequency
 noout
 norating
+noscanlangid
 notAfter
 notifyme
 notifytype
@@ -2231,6 +2243,7 @@ snmpv
 snmpwalk
 snprintf
 snprintfcat
+snr
 sockdebug
 solaris
 solis

@@ -40,16 +40,18 @@
 #include "mge-hid.h"
 
 #ifndef SHUT_MODE
+	/* explore stub goes first, others alphabetically */
 	#include "explore-hid.h"
 	#include "apc-hid.h"
 	#include "belkin-hid.h"
 	#include "cps-hid.h"
-	#include "liebert-hid.h"
-	#include "powercom-hid.h"
-	#include "tripplite-hid.h"
+	#include "delta_ups-hid.h"
 	#include "idowell-hid.h"
+	#include "liebert-hid.h"
 	#include "openups-hid.h"
+	#include "powercom-hid.h"
 	#include "powervar-hid.h"
+	#include "tripplite-hid.h"
 #endif
 
 /* Reference list of avaiable subdrivers */
@@ -62,12 +64,13 @@ static subdriver_t *subdriver_list[] = {
 	&apc_subdriver,
 	&belkin_subdriver,
 	&cps_subdriver,
-	&liebert_subdriver,
-	&powercom_subdriver,
-	&tripplite_subdriver,
+	&delta_ups_subdriver,
 	&idowell_subdriver,
+	&liebert_subdriver,
 	&openups_subdriver,
+	&powercom_subdriver,
 	&powervar_subdriver,
+	&tripplite_subdriver,
 #endif
 	NULL
 };
@@ -910,7 +913,7 @@ void upsdrv_initups(void)
 
 	subdriver_matcher = device_path;
 #else
-	char *regex_array[6];
+	char *regex_array[7];
 
 	upsdebugx(1, "upsdrv_initups (non-SHUT)...");
 
@@ -933,6 +936,7 @@ void upsdrv_initups(void)
 	regex_array[3] = getval("product");
 	regex_array[4] = getval("serial");
 	regex_array[5] = getval("bus");
+	regex_array[6] = getval("device");
 
 	ret = USBNewRegexMatcher(&regex_matcher, regex_array, REG_ICASE | REG_EXTENDED);
 	switch(ret)
@@ -1035,6 +1039,7 @@ void upsdrv_cleanup(void)
 	free(curDevice.Product);
 	free(curDevice.Serial);
 	free(curDevice.Bus);
+	free(curDevice.Device);
 #endif
 }
 
