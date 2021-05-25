@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2547 utf-8
+personal_ws-1.1 en 2549 utf-8
 AAS
 ACFAIL
 ACFREQ
@@ -262,6 +262,7 @@ EEPROM
 EG
 EL
 ELCD
+EMI
 ENDFOR
 ENV
 EOF
@@ -2406,6 +2407,7 @@ unpowered
 unshutup
 updateinfo
 upexia
+upower
 upsBypassCurrent
 upsBypassPower
 upsBypassVoltage
